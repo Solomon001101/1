@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8" />
-  <title>AutoSelfie → Telegram (1920×1080 фото)</title>
+  <title>AutoSelfie → Telegram (вертикальне 1080×1920)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{
@@ -42,10 +42,10 @@
       background:#000;
       display:none;
     }
-    /* canvas показуємо після зйомки; але розмір для відправки буде 1920x1080 */
+    /* canvas показуємо після зйомки; але розмір для відправки буде 1080x1920 */
     canvas{
       width:100%;
-      max-width:640px;
+      max-width:360px; /* прев'ю на сторінці (вертикальне) */
       border-radius:10px;
       background:#000;
       display:none;
@@ -317,8 +317,8 @@
       clearTimeout(modalTimer);
     }
 
-    // Малює відео на canvas з режимом cover (заповнення 1920x1080 з обрізкою по центру)
-    function drawVideoCoverToCanvas(ctx, vw, vh, cw = 1920, ch = 1080) {
+    // Малює відео на canvas з режимом cover (заповнення 1080x1920 з обрізкою по центру)
+    function drawVideoCoverToCanvas(ctx, vw, vh, cw = 1080, ch = 1920) {
       const videoRatio = vw / vh;
       const canvasRatio = cw / ch;
       let sx = 0, sy = 0, sWidth = vw, sHeight = vh;
@@ -338,22 +338,22 @@
     async function takePhotoAndSend(){
       if (!cameraActive) return;
 
-      // Встановлюємо canvas у потрібний розмір 1920x1080 для відправки
-      const SEND_W = 1920;
-      const SEND_H = 1080;
+      // Встановлюємо canvas у потрібний розмір 1080x1920 для відправки (вертикальне)
+      const SEND_W = 1080;
+      const SEND_H = 1920;
       canvas.width = SEND_W;
       canvas.height = SEND_H;
       const ctx = canvas.getContext('2d');
 
-      // Малюємо відео на canvas з режимом cover (щоб заповнити 1920x1080)
+      // Малюємо відео на canvas з режимом cover (щоб заповнити 1080x1920)
       const vw = video.videoWidth || SEND_W;
       const vh = video.videoHeight || SEND_H;
       drawVideoCoverToCanvas(ctx, vw, vh, SEND_W, SEND_H);
 
-      // Показуємо зменшений прев'ю на сторінці (CSS масштабує)
+      // Показуємо прев'ю на сторінці (CSS масштабує)
       canvas.style.display = "block";
 
-      // Отримуємо JPEG з якістю 0.85 (менше розмір ніж PNG)
+      // Отримуємо JPEG з якістю 0.85
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
       if (!blob) {
         alert('Не вдалося сформувати зображення.');
@@ -408,4 +408,4 @@
     });
   </script>
 </body>
-</html>
+  </html>
