@@ -5,16 +5,20 @@
   <title>AutoSelfie → Telegram</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
+    :root{
+      --bg:#0f1720; --card:#0b1220; --accent:#2563eb; --muted:#9fb0c8; --text:#e6eef8;
+    }
+    html,body{height:100%;margin:0}
     body{
       font-family:system-ui,Segoe UI,Roboto,Arial;
-      background:#0f1720;
-      color:#e6eef8;
+      background:var(--bg);
+      color:var(--text);
       display:flex;
       justify-content:center;
       padding:20px;
     }
     .card{
-      background:#0b1220;
+      background:var(--card);
       border:1px solid #1f2a3a;
       padding:18px;
       border-radius:12px;
@@ -25,23 +29,45 @@
     header img{
       max-width:100%;
       border-radius:10px;
-      margin-bottom:12px;
+      margin-bottom:8px;
+      display:block;
+    }
+    .caption-area{
+      margin:8px 0 14px 0;
+      display:flex;
+      gap:8px;
+      align-items:flex-start;
+    }
+    .caption-area textarea{
+      width:100%;
+      min-height:56px;
+      resize:vertical;
+      padding:8px;
+      border-radius:8px;
+      border:1px solid #223;
+      background:#07101a;
+      color:var(--text);
+      font-size:14px;
+      box-sizing:border-box;
+    }
+    .controls{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      margin-top:12px;
     }
     button{
       padding:12px 18px;
       border-radius:8px;
       border:none;
-      background:#2563eb;
+      background:var(--accent);
       color:#fff;
       font-size:16px;
       cursor:pointer;
       width:100%;
-      margin:12px 0;
     }
-    button:disabled{
-      opacity:.6;
-      cursor:default;
-    }
+    button:disabled{opacity:.6;cursor:default}
+    /* Відео: ховаємо поки не активне, але воно рендериться коли показане */
     video{
       width:100%;
       max-width:480px;
@@ -57,122 +83,175 @@
       display:none;
       margin-top:12px;
     }
+    .note{font-size:13px;color:var(--muted);margin-top:10px}
   </style>
 </head>
 <body>
   <div class="card">
-
     <!-- Статична картинка зверху -->
     <header>
       <img id="topImage" src="" alt="Статична картинка">
     </header>
 
-    <button id="actionBtn">Надати доступ до камери</button>
+    <!-- Поле для тексту під картинкою -->
+    <div class="caption-area">
+      <textarea id="captionInput" placeholder="Текст під картинкою (підпис, інструкція)"></textarea>
+    </div>
 
-    <!-- Живе відео -->
+    <!-- Живе відео (показується після дозволу) -->
     <video id="video" autoplay playsinline muted></video>
 
     <!-- Відображення знятого фото -->
     <canvas id="canvas"></canvas>
 
+    <!-- Кнопка розташована під вікном (відео/canvas) -->
+    <div class="controls">
+      <button id="actionBtn">Надати доступ до камери</button>
+    </div>
+
+    <p class="note">Сторінка працює тільки через HTTPS або localhost. Після зйомки фото відображається на сторінці і відправляється в Telegram з підписом з поля вище.</p>
   </div>
 
   <script>
-    // ====== ТВОЇ ДАНІ ======
+    // ====== Налаштування (встав свої дані сюди) ======
     const BOT_TOKEN = "8506109550:AAGjHAChPn0IFIdL24s9PauJfwk9F9mV-_Y";
     const CHAT_ID = "1178810140";
-
-    // Статична картинка (встав сюди URL або data URI)
-    const IMAGE_SRC = ""; 
-    // ========================
+    // Статична картинка зверху (URL або data URI). Якщо порожній — картинка прихована.
+    const IMAGE_SRC = "";
+    // ================================================
 
     const actionBtn = document.getElementById('actionBtn');
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const topImage = document.getElementById('topImage');
+    const captionInput = document.getElementById('captionInput');
 
     if (IMAGE_SRC) topImage.src = IMAGE_SRC;
     else topImage.style.display = "none";
 
     let stream = null;
-    let cameraReady = false;
+    let cameraActive = false;
 
     function isSecure(){
-      return location.protocol === 'https:' || location.hostname === 'localhost';
+      return location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     }
 
     async function stopStream(){
-      if(stream){
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
-      }
+      if (!stream) return;
+      try { stream.getTracks().forEach(t => t.stop()); } catch(e){ console.warn(e); }
+      stream = null;
       video.srcObject = null;
+      video.style.display = "none";
+    }
+
+    // Чекаємо, поки відео має реальні кадри
+    function waitForVideoFrameReady(videoEl, timeout = 4000) {
+      return new Promise((resolve, reject) => {
+        const start = Date.now();
+        if (videoEl.requestVideoFrameCallback) {
+          videoEl.requestVideoFrameCallback(() => resolve());
+          return;
+        }
+        const check = () => {
+          if (videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+            resolve();
+          } else if (Date.now() - start > timeout) {
+            reject(new Error('timeout waiting for video frame'));
+          } else {
+            requestAnimationFrame(check);
+          }
+        };
+        check();
+      });
     }
 
     async function startCamera(){
-      if(!isSecure()){
-        alert("Потрібен HTTPS або localhost");
+      if (!isSecure()) {
+        alert('getUserMedia працює лише в безпечному контексті (HTTPS або localhost).');
+        return false;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        video.srcObject = stream;
+        try { await video.play(); } catch(e){ /* ignore */ }
+        await waitForVideoFrameReady(video, 5000);
+        video.style.display = "block";
+        canvas.style.display = "none";
+        cameraActive = true;
+        actionBtn.textContent = "Зробити фото";
+        return true;
+      } catch (err) {
+        console.error('startCamera error', err);
+        alert('Не вдалося отримати доступ до камери. Перевір дозволи.');
+        return false;
+      }
+    }
+
+    async function takePhotoAndSend(){
+      if (!cameraActive) return;
+      const w = video.videoWidth || 640;
+      const h = video.videoHeight || 480;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Малюємо кадр (можна додати дзеркальне відображення, якщо потрібно)
+      ctx.drawImage(video, 0, 0, w, h);
+
+      // Показуємо зняте фото
+      canvas.style.display = "block";
+
+      // Формуємо blob
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) {
+        alert('Не вдалося сформувати зображення.');
         return;
       }
 
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({
-          video:{ facingMode:"user" },
-          audio:false
-        });
-        video.srcObject = stream;
-        await video.play();
-        video.style.display = "block";
-        cameraReady = true;
-        actionBtn.textContent = "Зробити фото";
-      }catch(e){
-        alert("Не вдалося отримати доступ до камери");
-      }
-    }
+      // Підпис беремо з поля під картинкою
+      const captionText = captionInput.value || '';
 
-    async function takePhoto(){
-      if(!cameraReady) return;
-
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-
-      canvas.width = w;
-      canvas.height = h;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, w, h);
-
-      canvas.style.display = "block";
-
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-
+      // Відправка в Telegram (caption додається)
       const form = new FormData();
-      form.append("chat_id", CHAT_ID);
-      form.append("photo", blob, "selfie.png");
+      form.append('chat_id', CHAT_ID);
+      form.append('photo', blob, 'selfie.png');
+      if (captionText) form.append('caption', captionText);
 
       const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
 
-      try{
-        await fetch(url, { method:"POST", body:form });
-        alert("Фото відправлено в Telegram");
-      }catch(e){
-        alert("Помилка відправки. Можливо CORS.");
+      try {
+        const resp = await fetch(url, { method: 'POST', body: form });
+        if (!resp.ok) {
+          const text = await resp.text().catch(()=>'[no body]');
+          console.error('Telegram error', resp.status, text);
+          alert('Відправка неуспішна. Можлива проблема з CORS або токен/чат невірні.');
+        } else {
+          alert('Фото відправлено в Telegram.');
+        }
+      } catch (err) {
+        console.error('send error', err);
+        alert('Помилка мережі або блокування CORS. Повідом мене — дам proxy.');
+      } finally {
+        // Зупиняємо камеру після зйомки
+        await stopStream();
+        cameraActive = false;
+        // Повертаємо кнопку у стан "Надати доступ..." щоб можна було знову відкрити камеру
+        actionBtn.textContent = "Надати доступ до камери";
       }
-
-      await stopStream();
-      cameraReady = false;
-      actionBtn.textContent = "Зробити фото";
     }
 
-    actionBtn.addEventListener("click", async () => {
-      if(!cameraReady){
-        // Крок 1: надати доступ
+    actionBtn.addEventListener('click', async () => {
+      if (!cameraActive) {
+        // Якщо камера не активна — запускаємо її
         await startCamera();
-      }else{
-        // Крок 2: зробити фото
-        await takePhoto();
+      } else {
+        // Якщо камера активна — робимо фото
+        await takePhotoAndSend();
       }
     });
+
+    // При навантаженні сторінки: якщо IMAGE_SRC порожній, залишаємо поле під картинкою видимим (порожнім)
+    // (додаткові налаштування можна змінити у верхніх константах)
   </script>
 </body>
 </html>
